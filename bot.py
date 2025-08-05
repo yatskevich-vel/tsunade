@@ -2,17 +2,23 @@ import telebot
 from openai import OpenAI
 import os
 
-# Токены
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# Получаем переменные из Railway
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+# Проверка токенов (можно убрать после отладки)
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN не найден в переменных окружения")
+if not OPENAI_API_KEY:
+    raise ValueError("❌ OPENAI_API_KEY не найден в переменных окружения")
+
+bot = telebot.TeleBot(BOT_TOKEN)
 client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Функция генерации ответа
+# Генерация ответа
 def generate_reply(user_message):
     response = client.chat.completions.create(
-        model="gpt-3.5-turbo",  # или gpt-4, если доступен
+        model="gpt-3.5-turbo",
         messages=[
             {
                 "role": "system",
@@ -25,7 +31,6 @@ def generate_reply(user_message):
         ],
         temperature=0.95
     )
-
     return response.choices[0].message.content.strip()
 
 # Обработка сообщений
@@ -37,5 +42,5 @@ def reply_handler(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-print("Бот запущен")
+print("🤖 Бот запущен")
 bot.polling()
