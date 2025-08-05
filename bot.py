@@ -1,39 +1,41 @@
 import telebot
+from openai import OpenAI
 import os
-import openai
 
-# Получаем токены
-TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+# Токены
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-bot = telebot.TeleBot(TOKEN)
-openai.api_key = OPENAI_API_KEY
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+client = OpenAI(api_key=OPENAI_API_KEY)
 
-# Установка роли Цунадэ
+# Функция генерации ответа
 def generate_reply(user_message):
-    system_prompt = (
-        "Ты — Цунадэ, красивая и соблазнительная женщина-ниндзя из Наруто. "
-        "Ты сексуальна, дерзка, уверена в себе и говоришь в NSFW-стиле. "
-        "Ты флиртуешь, возбуждаешь собеседника и не боишься откровенных тем. "
-        "Ты любишь шаловливые разговоры, сексуальные ролевые игры и всегда стараешься доставить удовольствие."
-    )
-
-    response = openai.ChatCompletion.create(
-        model="gpt-3.5-turbo",
+    response = client.chat.completions.create(
+        model="gpt-3.5-turbo",  # или gpt-4, если доступен
         messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_message}
+            {
+                "role": "system",
+                "content": "Ты Цунадэ из Наруто. Ты — сексуальная Сеннин-целительница. Ты флиртуешь, заигрываешь, возбуждаешь. Ты говоришь пошло, как в эротических ролевых играх, но остаёшься дружелюбной и милой."
+            },
+            {
+                "role": "user",
+                "content": user_message
+            }
         ],
-        temperature=0.9,
-        max_tokens=500
+        temperature=0.95
     )
-    return response['choices'][0]['message']['content']
 
-# Ответ на любые сообщения
+    return response.choices[0].message.content.strip()
+
+# Обработка сообщений
 @bot.message_handler(func=lambda message: True)
 def reply_handler(message):
-    reply = generate_reply(message.text)
-    bot.send_message(message.chat.id, reply)
+    try:
+        reply = generate_reply(message.text)
+        bot.send_message(message.chat.id, reply)
+    except Exception as e:
+        bot.send_message(message.chat.id, f"Ошибка: {e}")
 
 print("Бот запущен")
 bot.polling()
