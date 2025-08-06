@@ -35,7 +35,7 @@ system_prompt = {
 
 # 🔗 Запрос к OpenRouter
 def ask_openrouter(messages):
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = "https://openrouter.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
