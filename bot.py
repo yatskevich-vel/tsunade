@@ -35,7 +35,7 @@ def ask_openrouter(messages):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/YatixDev/tsunade-bot"  # Укажи ссылку на свой репозиторий
+        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"  # Укажи ссылку на свой репозиторий
     }
     data = {
         "model": "openchat/openchat-3.5-0106",
