@@ -51,7 +51,7 @@ def ask_openrouter(messages):
     return response.json()["choices"][0]["message"]["content"]
 
 # 👂 Обработка входящих апдейтов Telegram
-@app.route("/webhook", methods=["POST"])
+@app.route("/", methods=["POST"])
 def webhook():
     if request.headers.get("content-type") == "application/json":
         json_string = request.get_data().decode("utf-8")
