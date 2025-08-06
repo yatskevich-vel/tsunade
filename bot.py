@@ -17,11 +17,6 @@ bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 # 🧹 Удалим Webhook при старте
 requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook")
 
-# 🔁 Polling
-if __name__ == "__main__":
-    print("🚀 Bot started")
-    bot.infinity_polling()
-
 # Память диалога на пользователя
 user_histories = {}
 
@@ -43,7 +38,7 @@ def ask_openrouter(messages):
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"  # Укажи ссылку на свой репозиторий
+        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
     }
     data = {
         "model": "openchat/openchat-3.5-0106",
@@ -100,5 +95,7 @@ def chat(message):
         print(f"Error: {e}")
         bot.send_message(user_id, "Что-то пошло не так. Попробуй снова позже 😢")
 
-print("Bot started.")
-bot.infinity_polling()
+# ✅ Запускаем polling только при прямом запуске
+if __name__ == "__main__":
+    print("🚀 Bot started")
+    bot.infinity_polling()
