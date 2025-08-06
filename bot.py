@@ -5,6 +5,10 @@ from dotenv import load_dotenv
 from flask import Flask, request
 from collections import deque
 
+print("Flask module:", flask)
+print("Flask version:", flask.__version__)
+print("before_first_request attr:", hasattr(flask.Flask, 'before_first_request'))
+
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
