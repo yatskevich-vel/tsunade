@@ -14,6 +14,14 @@ if not TELEGRAM_BOT_TOKEN or not OPENROUTER_API_KEY:
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
+# 🧹 Удалим Webhook при старте
+requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook")
+
+# 🔁 Polling
+if __name__ == "__main__":
+    print("🚀 Bot started")
+    bot.infinity_polling()
+
 # Память диалога на пользователя
 user_histories = {}
 
