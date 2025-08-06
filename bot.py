@@ -6,6 +6,15 @@ import requests
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
+# Проверка на наличие токена
+if TELEGRAM_BOT_TOKEN is None:
+    print("❌ TELEGRAM_BOT_TOKEN is not set!")
+    exit(1)
+
+if OPENROUTER_API_KEY is None:
+    print("❌ OPENROUTER_API_KEY is not set!")
+    exit(1)
+
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
 # Функция генерации ответа через OpenRouter (GPT-3.5-turbo)
