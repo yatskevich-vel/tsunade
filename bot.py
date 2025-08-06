@@ -2,37 +2,33 @@ import os
 import telebot
 import requests
 from dotenv import load_dotenv
+from flask import Flask, request
 from collections import deque
 
 load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-app.up.railway.app/webhook
 
-if not TELEGRAM_BOT_TOKEN or not OPENROUTER_API_KEY:
-    raise ValueError("❌ TELEGRAM_BOT_TOKEN or OPENROUTER_API_KEY is not set!")
+if not TELEGRAM_BOT_TOKEN or not OPENROUTER_API_KEY or not WEBHOOK_URL:
+    raise ValueError("❌ Missing required env vars: TELEGRAM_BOT_TOKEN, OPENROUTER_API_KEY, WEBHOOK_URL")
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
+app = Flask(__name__)
 
-# 🧹 Удалим Webhook при старте
-requests.get(f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/deleteWebhook")
-
-# Память диалога на пользователя
+# 🧠 Память на пользователя
 user_histories = {}
 
-# Базовый system prompt
+# 🔧 Prompt
 system_prompt = {
     "role": "system",
     "content": (
-        "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи. "
-        "Ты умна, властна, сексуальна и уверена в себе. Ты обращаешься к собеседнику как к дорогому, привлекательному гостю. "
-        "Ты находишься в Конохе, но можешь представить любую эротическую фантазию. "
-        "Ты ведёшь флирт, эротический диалог, возбуждающе описываешь сцены и задаёшь вопросы. "
-        "Все события — игра воображения, основанная на ролевом взаимодействии."
+        "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи..."
     )
 }
 
-# Запрос к OpenRouter
+# 🔗 Запрос к OpenRouter
 def ask_openrouter(messages):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -45,37 +41,45 @@ def ask_openrouter(messages):
         "messages": [system_prompt] + messages,
         "temperature": 0.9
     }
-
     response = requests.post(url, headers=headers, json=data)
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
-# Команды
+# 👂 Обработка входящих апдейтов Telegram
+@app.route("/webhook", methods=["POST"])
+def webhook():
+    if request.headers.get("content-type") == "application/json":
+        json_string = request.get_data().decode("utf-8")
+        update = telebot.types.Update.de_json(json_string)
+        bot.process_new_updates([update])
+        return "", 200
+    return "", 403
+
+# 🧠 Команды
 @bot.message_handler(commands=["start"])
 def handle_start(message):
     user_id = message.chat.id
     user_histories[user_id] = deque(maxlen=10)
-    bot.send_message(user_id, "Привет, милый! Я Цунадэ, Пятая Хокаге... Ты ведь не просто так пришёл ко мне? 😉")
+    bot.send_message(user_id, "Привет, милый! Я Цунадэ, Пятая Хокаге... 😉")
 
 @bot.message_handler(commands=["reset"])
 def handle_reset(message):
-    user_id = message.chat.id
-    user_histories[user_id] = deque(maxlen=10)
-    bot.send_message(user_id, "Хорошо, начнём с чистого листа... 💋")
+    user_histories[message.chat.id] = deque(maxlen=10)
+    bot.send_message(message.chat.id, "Хорошо, начнём с чистого листа... 💋")
 
 @bot.message_handler(commands=["lore"])
 def handle_lore(message):
-    bot.send_message(message.chat.id, "Ты находишься в мире Наруто. Цунадэ — Пятая Хокаге, но любит развлекаться в свободное время. Может быть, ты шиноби или странник, попавший в Коноху... 😉")
+    bot.send_message(message.chat.id, "Ты в мире Наруто. Цунадэ — Пятая Хокаге... 😉")
 
 @bot.message_handler(commands=["roleplay"])
 def handle_roleplay(message):
-    bot.send_message(message.chat.id, "Представь: тёплый вечер, горячие источники... Цунадэ ждет тебя в уединённой купальне. Что ты скажешь ей первым делом? 😘")
+    bot.send_message(message.chat.id, "Представь: тёплый вечер... Что ты скажешь ей первым делом? 😘")
 
 @bot.message_handler(commands=["hot"])
 def handle_hot(message):
-    bot.send_message(message.chat.id, "Хочешь перейти на более горячий уровень, да? Только скажи, и я сделаю всё, чтобы ты не забыл эту ночь... 🔥")
+    bot.send_message(message.chat.id, "Хочешь перейти на более горячий уровень? 🔥")
 
-# Основной диалог
+# 💬 Главный диалог
 @bot.message_handler(func=lambda message: True)
 def chat(message):
     user_id = message.chat.id
@@ -92,10 +96,16 @@ def chat(message):
         history.append({"role": "assistant", "content": reply})
         bot.send_message(user_id, reply)
     except Exception as e:
-        print(f"Error: {e}")
+        print(f"❌ Error: {e}")
         bot.send_message(user_id, "Что-то пошло не так. Попробуй снова позже 😢")
 
-# ✅ Запускаем polling только при прямом запуске
+# 🔁 Устанавливаем Webhook при запуске
+@app.before_first_request
+def setup_webhook():
+    bot.remove_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
+    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
+
+# 🚀 Запуск Flask-приложения
 if __name__ == "__main__":
-    print("🚀 Bot started")
-    bot.infinity_polling()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
