@@ -1,7 +1,7 @@
 import os
 import telebot
 import requests
-import flask 
+import flask
 from dotenv import load_dotenv
 from flask import Flask, request
 from collections import deque
@@ -14,7 +14,7 @@ load_dotenv()
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-app.up.railway.app/webhook
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-app.up.railway.app
 
 if not TELEGRAM_BOT_TOKEN or not OPENROUTER_API_KEY or not WEBHOOK_URL:
     raise ValueError("❌ Missing required env vars: TELEGRAM_BOT_TOKEN, OPENROUTER_API_KEY, WEBHOOK_URL")
@@ -42,11 +42,16 @@ def ask_openrouter(messages):
         "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
     }
     data = {
-        "model": "openchat/openchat-3.5-0106",
+        "model": "mistralai/mixtral-8x7b",  # ✅ Рабочая модель
         "messages": [system_prompt] + messages,
         "temperature": 0.9
     }
+
     response = requests.post(url, headers=headers, json=data)
+
+    print("🔍 Status Code:", response.status_code)
+    print("🔍 Response Text:", response.text)
+
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
@@ -109,8 +114,4 @@ if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
     print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
-
-# 🚀 Запуск Flask-приложения
-if __name__ == "__main__":
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
