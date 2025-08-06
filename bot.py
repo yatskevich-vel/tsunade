@@ -1,25 +1,24 @@
 import telebot
-from openai import OpenAI
 import os
+import requests
 
-# Получаем переменные из Railway
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+# Получаем токены из переменных окружения
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
 
-# Проверка токенов (можно убрать после отладки)
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN не найден в переменных окружения")
-if not OPENAI_API_KEY:
-    raise ValueError("❌ OPENAI_API_KEY не найден в переменных окружения")
+bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-bot = telebot.TeleBot(BOT_TOKEN)
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# Генерация ответа
+# Функция генерации ответа через OpenRouter (GPT-3.5-turbo)
 def generate_reply(user_message):
-    response = client.chat.completions.create(
-        model="gpt-3.5-turbo",
-        messages=[
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "HTTP-Referer": "https://your-app-name.com",  # можно оставить как есть
+        "Content-Type": "application/json"
+    }
+
+    data = {
+        "model": "openai/gpt-3.5-turbo",  # или "openai/gpt-4", "meta-llama/llama-3-8b-instruct", и т.д.
+        "messages": [
             {
                 "role": "system",
                 "content": "Ты Цунадэ из Наруто. Ты — сексуальная Сеннин-целительница. Ты флиртуешь, заигрываешь, возбуждаешь. Ты говоришь пошло, как в эротических ролевых играх, но остаёшься дружелюбной и милой."
@@ -28,12 +27,17 @@ def generate_reply(user_message):
                 "role": "user",
                 "content": user_message
             }
-        ],
-        temperature=0.95
-    )
-    return response.choices[0].message.content.strip()
+        ]
+    }
 
-# Обработка сообщений
+    response = requests.post("https://openrouter.ai/api/v1/chat/completions", headers=headers, json=data)
+
+    if response.status_code == 200:
+        return response.json()["choices"][0]["message"]["content"].strip()
+    else:
+        return f"Ошибка OpenRouter: {response.status_code} - {response.text}"
+
+# Обработка входящих сообщений
 @bot.message_handler(func=lambda message: True)
 def reply_handler(message):
     try:
@@ -42,5 +46,5 @@ def reply_handler(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"Ошибка: {e}")
 
-print("🤖 Бот запущен")
+print("Бот запущен через OpenRouter")
 bot.polling()
