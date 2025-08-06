@@ -105,7 +105,6 @@ def chat(message):
         bot.send_message(user_id, "Что-то пошло не так. Попробуй снова позже 😢")
 
 # 🔁 Устанавливаем Webhook при запуске
-@app.before_first_request
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
