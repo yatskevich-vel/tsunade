@@ -5,9 +5,14 @@ import flask
 from dotenv import load_dotenv
 from flask import Flask, request
 from collections import deque
+import importlib.metadata
 
 print("Flask module:", flask)
-print("Flask version:", flask.__version__)
+try:
+    flask_version = importlib.metadata.version("flask")
+except importlib.metadata.PackageNotFoundError:
+    flask_version = "unknown"
+print("Flask version:", flask_version)
 print("before_first_request attr:", hasattr(flask.Flask, 'before_first_request'))
 
 load_dotenv()
@@ -35,13 +40,14 @@ system_prompt = {
 
 # 🔗 Запрос к OpenRouter
 def ask_openrouter(messages):
-    url = "https://openrouter.ai/api/v1/chat/completions"
+    url = "https://openrouter.ai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
     }
     data = {
-        "model": "mistralai/mixtral-8x7b",  # ✅ Рабочая модель
+        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
         "messages": [system_prompt] + messages,
         "temperature": 0.9
     }
