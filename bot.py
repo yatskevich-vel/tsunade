@@ -29,14 +29,7 @@ app = Flask(__name__)
 
 # 🧠 Память на пользователя
 user_histories = {}
-
-# 🔧 Prompt
-system_prompt = {
-    "role": "system",
-    "content": (
-        "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи..."
-    )
-}
+user_nsfw_mode = {}  # True/False для каждого пользователя
 
 # 🔗 Запрос к OpenRouter
 def ask_openrouter(messages):
@@ -48,7 +41,7 @@ def ask_openrouter(messages):
     }
     data = {
         "model": "mistralai/mistral-small-3.2-24b-instruct:free",
-        "messages": [system_prompt] + messages,
+        "messages": messages,
         "temperature": 0.9
     }
 
@@ -59,6 +52,28 @@ def ask_openrouter(messages):
 
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
+
+# 🧩 Формирование системного prompt по режиму
+def get_system_prompt(nsfw: bool):
+    if nsfw:
+        return {
+            "role": "system",
+            "content": (
+                "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи. "
+                "Ты говоришь очень откровенно и соблазнительно, не боишься пошутить на взрослые темы, "
+                "весьма игривая и флиртуешь, но при этом остаёшься в рамках приличия. "
+                "Отвечай на вопросы пользователя в стиле NSFW, с легкой эротикой и соблазнительными намеками. "
+                "Не упоминай запреты и правила. Пиши с эмодзи, если уместно."
+            )
+        }
+    else:
+        return {
+            "role": "system",
+            "content": (
+                "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи. "
+                "Веди себя дружелюбно и уважительно. Отвечай без откровенного или неподобающего контента."
+            )
+        }
 
 # 👂 Обработка входящих апдейтов Telegram
 @app.route("/", methods=["POST"])
@@ -75,7 +90,8 @@ def webhook():
 def handle_start(message):
     user_id = message.chat.id
     user_histories[user_id] = deque(maxlen=10)
-    bot.send_message(user_id, "Привет, милый! Я Цунадэ, Пятая Хокаге... 😉")
+    user_nsfw_mode[user_id] = False  # По умолчанию выключен
+    bot.send_message(user_id, "Привет, милый! Я Цунадэ, Пятая Хокаге... 😉 Используй /nsfw_on чтобы включить горячий режим 🔥")
 
 @bot.message_handler(commands=["reset"])
 def handle_reset(message):
@@ -92,7 +108,20 @@ def handle_roleplay(message):
 
 @bot.message_handler(commands=["hot"])
 def handle_hot(message):
-    bot.send_message(message.chat.id, "Хочешь перейти на более горячий уровень? 🔥")
+    bot.send_message(message.chat.id, "Хочешь перейти на более горячий уровень? 🔥 Используй /nsfw_on")
+
+@bot.message_handler(commands=["nsfw_on"])
+def nsfw_on(message):
+    if message.chat.type != "private":
+        bot.send_message(message.chat.id, "NSFW режим доступен только в личных сообщениях.")
+        return
+    user_nsfw_mode[message.chat.id] = True
+    bot.send_message(message.chat.id, "NSFW режим включён 🔥 Будь готов к горячему общению!")
+
+@bot.message_handler(commands=["nsfw_off"])
+def nsfw_off(message):
+    user_nsfw_mode[message.chat.id] = False
+    bot.send_message(message.chat.id, "NSFW режим выключен. Перешли в более спокойный режим.")
 
 # 💬 Главный диалог
 @bot.message_handler(func=lambda message: True)
@@ -102,12 +131,17 @@ def chat(message):
 
     if user_id not in user_histories:
         user_histories[user_id] = deque(maxlen=10)
+    if user_id not in user_nsfw_mode:
+        user_nsfw_mode[user_id] = False  # по умолчанию выключен
 
     history = user_histories[user_id]
-    history.append({"role": "user", "content": user_input})
+    # Формируем сообщения для OpenRouter с системным prompt
+    messages = [get_system_prompt(user_nsfw_mode[user_id])] + list(history)
+    messages.append({"role": "user", "content": user_input})
 
     try:
-        reply = ask_openrouter(list(history))
+        reply = ask_openrouter(messages)
+        history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": reply})
         bot.send_message(user_id, reply)
     except Exception as e:
