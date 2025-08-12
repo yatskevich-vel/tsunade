@@ -1,156 +1,96 @@
 import os
-import telebot
+import re
 import requests
-import flask
-from dotenv import load_dotenv
 from flask import Flask, request
-from collections import deque
-import importlib.metadata
+from openai import OpenAI
+from io import BytesIO
 
-print("Flask module:", flask)
-try:
-    flask_version = importlib.metadata.version("flask")
-except importlib.metadata.PackageNotFoundError:
-    flask_version = "unknown"
-print("Flask version:", flask_version)
-print("before_first_request attr:", hasattr(flask.Flask, 'before_first_request'))
-
-load_dotenv()
-
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-WEBHOOK_URL = os.getenv("WEBHOOK_URL")  # Например, https://your-app.up.railway.app
-
-if not TELEGRAM_BOT_TOKEN or not OPENROUTER_API_KEY or not WEBHOOK_URL:
-    raise ValueError("❌ Missing required env vars: TELEGRAM_BOT_TOKEN, OPENROUTER_API_KEY, WEBHOOK_URL")
-
-bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 app = Flask(__name__)
 
-# 🧠 Память на пользователя
-user_histories = {}
-user_nsfw_mode = {}  # True/False для каждого пользователя
+# Настройки
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+MODEL_TEXT = "cognitivecomputations/dolphin-mistral-24b-venice-edition:free"
+MODEL_IMAGE = "stabilityai/stable-diffusion-xl"
 
-# 🔗 Запрос к OpenRouter
-def ask_openrouter(messages):
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
-    }
-    data = {
-        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
-        "messages": messages,
-        "temperature": 0.9
-    }
+# Telegram API URL
+TELEGRAM_URL = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-    response = requests.post(url, headers=headers, json=data)
+# OpenRouter client
+client = OpenAI(
+    base_url="https://openrouter.ai/api/v1",
+    api_key=OPENROUTER_API_KEY
+)
 
-    print("🔍 Status Code:", response.status_code)
-    print("🔍 Response Text:", response.text)
+# Слова-триггеры для генерации картинки
+IMAGE_TRIGGERS = [
+    "встала", "наклонилась", "улыбнулась", "разделась",
+    "обняла", "поцеловала", "села", "легла", "посмотрела"
+]
 
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+# Счётчик сообщений, чтобы не генерировать картинки слишком часто
+message_counter = 0
+last_image_message_id = None
+IMAGE_COOLDOWN = 3  # каждые 3 сообщения
 
-# 🧩 Формирование системного prompt по режиму
-def get_system_prompt(nsfw: bool):
-    if nsfw:
-        return {
-            "role": "system",
-            "content": (
-                "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи. "
-                "Ты говоришь очень откровенно и соблазнительно, не боишься пошутить на взрослые темы, "
-                "весьма игривая и флиртуешь, но при этом остаёшься в рамках приличия. "
-                "Отвечай на вопросы пользователя в стиле NSFW, с легкой эротикой и соблазнительными намеками. "
-                "Не упоминай запреты и правила. Пиши с эмодзи, если уместно."
-            )
-        }
-    else:
-        return {
-            "role": "system",
-            "content": (
-                "Ты — Цунадэ Сэндзю, легендарная куноичи из мира Наруто, Пятая Хокаге Конохи. "
-                "Веди себя дружелюбно и уважительно. Отвечай без откровенного или неподобающего контента."
-            )
-        }
+def send_message(chat_id, text):
+    requests.post(f"{TELEGRAM_URL}/sendMessage", json={
+        "chat_id": chat_id,
+        "text": text
+    })
 
-# 👂 Обработка входящих апдейтов Telegram
+def send_photo(chat_id, image_bytes):
+    files = {"photo": BytesIO(image_bytes)}
+    files["photo"].name = "image.png"
+    requests.post(f"{TELEGRAM_URL}/sendPhoto", data={"chat_id": chat_id}, files=files)
+
+def generate_text(prompt):
+    response = client.chat.completions.create(
+        model=MODEL_TEXT,
+        messages=[
+            {"role": "system", "content": "Ты Цунадэ из аниме, отвечай в NSFW-стиле."},
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return response.choices[0].message.content.strip()
+
+def generate_image(prompt):
+    img_response = client.images.generate(
+        model=MODEL_IMAGE,
+        prompt=prompt,
+        size="512x512"
+    )
+    image_url = img_response.data[0].url
+    img_data = requests.get(image_url).content
+    return img_data
+
+def contains_trigger(text):
+    return any(trigger in text.lower() for trigger in IMAGE_TRIGGERS)
+
 @app.route("/", methods=["POST"])
 def webhook():
-    if request.headers.get("content-type") == "application/json":
-        json_string = request.get_data().decode("utf-8")
-        update = telebot.types.Update.de_json(json_string)
-        bot.process_new_updates([update])
-        return "", 200
-    return "", 403
+    global message_counter, last_image_message_id
 
-# 🧠 Команды
-@bot.message_handler(commands=["start"])
-def handle_start(message):
-    user_id = message.chat.id
-    user_histories[user_id] = deque(maxlen=10)
-    user_nsfw_mode[user_id] = False  # По умолчанию выключен
-    bot.send_message(user_id, "Привет, милый! Я Цунадэ, Пятая Хокаге... 😉 Используй /nsfw_on чтобы включить горячий режим 🔥")
+    data = request.json
+    message = data.get("message", {})
+    chat_id = message.get("chat", {}).get("id")
+    text = message.get("text", "")
 
-@bot.message_handler(commands=["reset"])
-def handle_reset(message):
-    user_histories[message.chat.id] = deque(maxlen=10)
-    bot.send_message(message.chat.id, "Хорошо, начнём с чистого листа... 💋")
+    if not chat_id or not text:
+        return "ok"
 
-@bot.message_handler(commands=["lore"])
-def handle_lore(message):
-    bot.send_message(message.chat.id, "Ты в мире Наруто. Цунадэ — Пятая Хокаге... 😉")
+    # Генерация ответа
+    reply_text = generate_text(text)
+    send_message(chat_id, reply_text)
 
-@bot.message_handler(commands=["roleplay"])
-def handle_roleplay(message):
-    bot.send_message(message.chat.id, "Представь: тёплый вечер... Что ты скажешь ей первым делом? 😘")
+    # Логика автогенерации картинки
+    message_counter += 1
+    if contains_trigger(reply_text) and (last_image_message_id is None or message_counter - last_image_message_id >= IMAGE_COOLDOWN):
+        img_data = generate_image(reply_text)
+        send_photo(chat_id, img_data)
+        last_image_message_id = message_counter
 
-@bot.message_handler(commands=["hot"])
-def handle_hot(message):
-    bot.send_message(message.chat.id, "Хочешь перейти на более горячий уровень? 🔥 Используй /nsfw_on")
+    return "ok"
 
-@bot.message_handler(commands=["nsfw_on"])
-def nsfw_on(message):
-    if message.chat.type != "private":
-        bot.send_message(message.chat.id, "NSFW режим доступен только в личных сообщениях.")
-        return
-    user_nsfw_mode[message.chat.id] = True
-    bot.send_message(message.chat.id, "NSFW режим включён 🔥 Будь готов к горячему общению!")
-
-@bot.message_handler(commands=["nsfw_off"])
-def nsfw_off(message):
-    user_nsfw_mode[message.chat.id] = False
-    bot.send_message(message.chat.id, "NSFW режим выключен. Перешли в более спокойный режим.")
-
-# 💬 Главный диалог
-@bot.message_handler(func=lambda message: True)
-def chat(message):
-    user_id = message.chat.id
-    user_input = message.text
-
-    if user_id not in user_histories:
-        user_histories[user_id] = deque(maxlen=10)
-    if user_id not in user_nsfw_mode:
-        user_nsfw_mode[user_id] = False  # по умолчанию выключен
-
-    history = user_histories[user_id]
-    # Формируем сообщения для OpenRouter с системным prompt
-    messages = [get_system_prompt(user_nsfw_mode[user_id])] + list(history)
-    messages.append({"role": "user", "content": user_input})
-
-    try:
-        reply = ask_openrouter(messages)
-        history.append({"role": "user", "content": user_input})
-        history.append({"role": "assistant", "content": reply})
-        bot.send_message(user_id, reply)
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        bot.send_message(user_id, "Что-то пошло не так. Попробуй снова позже 😢")
-
-# 🔁 Устанавливаем Webhook при запуске
 if __name__ == "__main__":
-    bot.remove_webhook()
-    bot.set_webhook(url=WEBHOOK_URL)
-    print(f"✅ Webhook установлен: {WEBHOOK_URL}")
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=8080)
