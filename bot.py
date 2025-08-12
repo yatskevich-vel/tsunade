@@ -6,6 +6,8 @@ from dotenv import load_dotenv
 from flask import Flask, request
 from collections import deque
 import importlib.metadata
+import re
+from io import BytesIO
 
 print("Flask module:", flask)
 try:
@@ -31,6 +33,16 @@ app = Flask(__name__)
 user_histories = {}
 user_nsfw_mode = {}  # True/False для каждого пользователя
 
+# Для генерации картинок
+IMAGE_TRIGGER_WORDS = [
+    "встала", "наклонилась", "улыбнулась", "разделась",
+    "обняла", "поцеловала", "легла", "развернулась",
+    "села", "сняла", "раздвинула", "пошла"
+]
+
+image_cooldown = 0
+last_image_prompt = ""
+
 # 🔗 Запрос к OpenRouter
 def ask_openrouter(messages):
     url = "https://openrouter.ai/api/v1/chat/completions"
@@ -52,6 +64,34 @@ def ask_openrouter(messages):
 
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
+
+def extract_image_prompt(text):
+    pattern = r"(?:\S+\s){0,3}(" + "|".join(IMAGE_TRIGGER_WORDS) + r")(?:\s\S+){0,3}"
+    match = re.search(pattern, text.lower())
+    if match:
+        start = max(0, match.start() - 30)
+        end = min(len(text), match.end() + 30)
+        snippet = text[start:end].strip()
+        prompt = f"Цунадэ из Наруто, в стиле аниме, детализированный арт, сцена: {snippet}"
+        return prompt
+    return None
+
+def generate_image(prompt):
+    url = "https://openrouter.ai/api/v1/images"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "model": "stabilityai/stable-diffusion-xl-base-1.0",
+        "prompt": prompt,
+        "size": "1024x1024"
+    }
+    response = requests.post(url, headers=headers, json=payload)
+    response.raise_for_status()
+    img_url = response.json()["data"][0]["url"]
+    img_data = requests.get(img_url)
+    return BytesIO(img_data.content)
 
 # 🧩 Формирование системного prompt по режиму
 def get_system_prompt(nsfw: bool):
@@ -126,6 +166,8 @@ def nsfw_off(message):
 # 💬 Главный диалог
 @bot.message_handler(func=lambda message: True)
 def chat(message):
+    global image_cooldown, last_image_prompt
+
     user_id = message.chat.id
     user_input = message.text
 
@@ -144,9 +186,27 @@ def chat(message):
         history.append({"role": "user", "content": user_input})
         history.append({"role": "assistant", "content": reply})
         bot.send_message(user_id, reply)
+
+        if user_nsfw_mode.get(user_id, False):
+            prompt = extract_image_prompt(reply)
+            if prompt and prompt != last_image_prompt and image_cooldown <= 0:
+                try:
+                    img = generate_image(prompt)
+                    bot.send_photo(user_id, photo=img)
+                    last_image_prompt = prompt
+                    image_cooldown = 3  # пауза, чтобы не спамить картинками
+                except Exception as e:
+                    print("Ошибка генерации изображения:", e)
+            else:
+                image_cooldown = max(0, image_cooldown - 1)
+
     except Exception as e:
         print(f"❌ Error: {e}")
         bot.send_message(user_id, "Что-то пошло не так. Попробуй снова позже 😢")
+
+# Инициализация переменных для cooldown в глобальной области
+image_cooldown = 0
+last_image_prompt = ""
 
 # 🔁 Устанавливаем Webhook при запуске
 if __name__ == "__main__":
