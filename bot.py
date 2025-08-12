@@ -180,7 +180,7 @@ def ask_openrouter(messages):
         "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
     }
     data = {
-        "model": qwen/qwen3-coder:free",
+        "model": "qwen/qwen3-coder:free",
         "messages": messages,
         "temperature": 0.9
     }
