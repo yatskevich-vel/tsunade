@@ -8,7 +8,7 @@ from collections import deque
 import importlib.metadata
 import re
 from io import BytesIO
-import pymorphy2  # добавили pymorphy2
+import pymorphy2  # морфологический анализатор
 
 print("Flask module:", flask)
 try:
@@ -30,14 +30,14 @@ if not TELEGRAM_BOT_TOKEN or not OPENROUTER_API_KEY or not WEBHOOK_URL:
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 app = Flask(__name__)
 
-# 🧠 Память на пользователя
+# Память на пользователя
 user_histories = {}
 user_nsfw_mode = {}  # True/False для каждого пользователя
 
 # pymorphy2 MorphAnalyzer для нормализации слов
 morph = pymorphy2.MorphAnalyzer()
 
-# Расширенный список триггерных слов (в нормальной форме)
+# Список триггерных слов (в нормальной форме)
 IMAGE_TRIGGER_WORDS = [
     "встаёт", "наклоняется", "улыбается", "раздевается",
     "обнимает", "целует", "лежит", "разворачивается",
@@ -70,7 +70,6 @@ def contains_image_trigger(text):
     return False
 
 def extract_image_prompt(text):
-    # Ищем в тексте слова из списка, учитывая нормализацию
     words = re.findall(r'\w+', text.lower())
     normalized_words = [normalize_word(w) for w in words]
 
@@ -90,9 +89,9 @@ def generate_image(prompt):
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "mistralai/mistral-small-3.2-24b-instruct:free",  # Выбрали модель Mistral Small 3.2
+        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
         "prompt": prompt,
-        "size": "512x512"  # Меньшее разрешение для телефона
+        "size": "512x512"
     }
     response = requests.post(url, headers=headers, json=payload)
     response.raise_for_status()
@@ -100,7 +99,6 @@ def generate_image(prompt):
     img_data = requests.get(img_url)
     return BytesIO(img_data.content)
 
-# 🧩 Формирование системного prompt по режиму
 def get_system_prompt(nsfw: bool):
     if nsfw:
         return {
@@ -122,7 +120,6 @@ def get_system_prompt(nsfw: bool):
             )
         }
 
-# 🔗 Запрос к OpenRouter
 def ask_openrouter(messages):
     url = "https://openrouter.ai/api/v1/chat/completions"
     headers = {
@@ -144,7 +141,6 @@ def ask_openrouter(messages):
     response.raise_for_status()
     return response.json()["choices"][0]["message"]["content"]
 
-# 👂 Обработка входящих апдейтов Telegram
 @app.route("/", methods=["POST"])
 def webhook():
     if request.headers.get("content-type") == "application/json":
@@ -154,12 +150,11 @@ def webhook():
         return "", 200
     return "", 403
 
-# 🧠 Команды
 @bot.message_handler(commands=["start"])
 def handle_start(message):
     user_id = message.chat.id
     user_histories[user_id] = deque(maxlen=10)
-    user_nsfw_mode[user_id] = False  # По умолчанию выключен
+    user_nsfw_mode[user_id] = False
     bot.send_message(user_id, "Привет, милый! Я Цунадэ, Пятая Хокаге... 😉 Используй /nsfw_on чтобы включить горячий режим 🔥")
 
 @bot.message_handler(commands=["reset"])
@@ -192,7 +187,6 @@ def nsfw_off(message):
     user_nsfw_mode[message.chat.id] = False
     bot.send_message(message.chat.id, "NSFW режим выключен. Перешли в более спокойный режим.")
 
-# 💬 Главный диалог
 @bot.message_handler(func=lambda message: True)
 def chat(message):
     global image_cooldown, last_image_prompt
@@ -203,10 +197,9 @@ def chat(message):
     if user_id not in user_histories:
         user_histories[user_id] = deque(maxlen=10)
     if user_id not in user_nsfw_mode:
-        user_nsfw_mode[user_id] = False  # по умолчанию выключен
+        user_nsfw_mode[user_id] = False
 
     history = user_histories[user_id]
-    # Формируем сообщения для OpenRouter с системным prompt
     messages = [get_system_prompt(user_nsfw_mode[user_id])] + list(history)
     messages.append({"role": "user", "content": user_input})
 
@@ -216,7 +209,6 @@ def chat(message):
         history.append({"role": "assistant", "content": reply})
         bot.send_message(user_id, reply)
 
-        # Проверка на триггерные слова с морфологией
         if user_nsfw_mode.get(user_id, False):
             if contains_image_trigger(reply):
                 prompt = extract_image_prompt(reply)
@@ -225,7 +217,7 @@ def chat(message):
                         img = generate_image(prompt)
                         bot.send_photo(user_id, photo=img)
                         last_image_prompt = prompt
-                        image_cooldown = 3  # пауза, чтобы не спамить картинками
+                        image_cooldown = 3
                     except Exception as e:
                         print("Ошибка генерации изображения:", e)
                 else:
@@ -235,11 +227,9 @@ def chat(message):
         print(f"❌ Error: {e}")
         bot.send_message(user_id, "Что-то пошло не так. Попробуй снова позже 😢")
 
-# Инициализация переменных для cooldown в глобальной области
 image_cooldown = 0
 last_image_prompt = ""
 
-# 🔁 Устанавливаем Webhook при запуске
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=WEBHOOK_URL)
