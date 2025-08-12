@@ -2,3 +2,4 @@ Flask>=2.0.0
 python-dotenv
 pyTelegramBotAPI
 openai>=1.1.1
+pymorphy2
