@@ -141,7 +141,7 @@ def generate_image(prompt):
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "google/gemini-2.5-pro-exp-03-25",
+        "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
         "prompt": prompt,
         "size": "512x512"
     }
@@ -180,7 +180,7 @@ def ask_openrouter(messages):
         "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
     }
     data = {
-        "model": "openai/gpt-oss-20b:free",
+        "model": qwen/qwen3-coder:free",
         "messages": messages,
         "temperature": 0.9
     }
