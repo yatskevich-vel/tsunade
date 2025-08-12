@@ -210,8 +210,8 @@ def chat(message):
         bot.send_message(user_id, reply)
 
         if user_nsfw_mode.get(user_id, False):
-            if contains_image_trigger(reply):
-                prompt = extract_image_prompt(reply)
+            if contains_image_trigger(user_input):  # <- заменено с reply на user_input
+                prompt = extract_image_prompt(user_input)  # <- тоже с reply на user_input
                 if prompt and prompt != last_image_prompt and image_cooldown <= 0:
                     try:
                         img = generate_image(prompt)
