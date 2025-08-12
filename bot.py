@@ -8,6 +8,7 @@ from collections import deque
 import importlib.metadata
 import re
 from io import BytesIO
+import pymorphy2  # добавили pymorphy2
 
 print("Flask module:", flask)
 try:
@@ -33,47 +34,45 @@ app = Flask(__name__)
 user_histories = {}
 user_nsfw_mode = {}  # True/False для каждого пользователя
 
-# Для генерации картинок
+# pymorphy2 MorphAnalyzer для нормализации слов
+morph = pymorphy2.MorphAnalyzer()
+
+# Расширенный список триггерных слов (в нормальной форме)
 IMAGE_TRIGGER_WORDS = [
-    "встала", "наклонилась", "улыбнулась", "разделась",
-    "обняла", "поцеловала", "легла", "развернулась",
-    "села", "сняла", "раздвинула", "пошла"
+    "встать", "наклониться", "улыбнуться", "раздеться",
+    "обнять", "поцеловать", "лечь", "развернуться",
+    "сесть", "снять", "раздвинуть", "пойти",
+    "опуститься", "подойти", "приблизиться",
+    "касаться", "трогать", "скользить", "коснуться",
+    "подняться", "посмотреть", "заглянуть"
 ]
 
-image_cooldown = 0
-last_image_prompt = ""
+def normalize_word(word):
+    parsed = morph.parse(word)
+    if parsed:
+        return parsed[0].normal_form
+    return word.lower()
 
-# 🔗 Запрос к OpenRouter
-def ask_openrouter(messages):
-    url = "https://openrouter.ai/api/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-        "Content-Type": "application/json",
-        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
-    }
-    data = {
-        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
-        "messages": messages,
-        "temperature": 0.9
-    }
-
-    response = requests.post(url, headers=headers, json=data)
-
-    print("🔍 Status Code:", response.status_code)
-    print("🔍 Response Text:", response.text)
-
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+def contains_image_trigger(text):
+    words = re.findall(r'\w+', text.lower())
+    normalized_words = [normalize_word(w) for w in words]
+    for trigger in IMAGE_TRIGGER_WORDS:
+        if trigger in normalized_words:
+            return True
+    return False
 
 def extract_image_prompt(text):
-    pattern = r"(?:\S+\s){0,3}(" + "|".join(IMAGE_TRIGGER_WORDS) + r")(?:\s\S+){0,3}"
-    match = re.search(pattern, text.lower())
-    if match:
-        start = max(0, match.start() - 30)
-        end = min(len(text), match.end() + 30)
-        snippet = text[start:end].strip()
-        prompt = f"Цунадэ из Наруто, в стиле аниме, детализированный арт, сцена: {snippet}"
-        return prompt
+    # Ищем в тексте слова из списка, учитывая нормализацию
+    words = re.findall(r'\w+', text.lower())
+    normalized_words = [normalize_word(w) for w in words]
+
+    for i, w in enumerate(normalized_words):
+        if w in IMAGE_TRIGGER_WORDS:
+            start = max(0, i - 3)
+            end = min(len(words), i + 4)
+            snippet = " ".join(words[start:end])
+            prompt = f"Цунадэ из Наруто, в стиле аниме, детализированный арт, сцена: {snippet}"
+            return prompt
     return None
 
 def generate_image(prompt):
@@ -114,6 +113,28 @@ def get_system_prompt(nsfw: bool):
                 "Веди себя дружелюбно и уважительно. Отвечай без откровенного или неподобающего контента."
             )
         }
+
+# 🔗 Запрос к OpenRouter
+def ask_openrouter(messages):
+    url = "https://openrouter.ai/api/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
+    }
+    data = {
+        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
+        "messages": messages,
+        "temperature": 0.9
+    }
+
+    response = requests.post(url, headers=headers, json=data)
+
+    print("🔍 Status Code:", response.status_code)
+    print("🔍 Response Text:", response.text)
+
+    response.raise_for_status()
+    return response.json()["choices"][0]["message"]["content"]
 
 # 👂 Обработка входящих апдейтов Telegram
 @app.route("/", methods=["POST"])
@@ -187,18 +208,20 @@ def chat(message):
         history.append({"role": "assistant", "content": reply})
         bot.send_message(user_id, reply)
 
+        # Проверка на триггерные слова с морфологией
         if user_nsfw_mode.get(user_id, False):
-            prompt = extract_image_prompt(reply)
-            if prompt and prompt != last_image_prompt and image_cooldown <= 0:
-                try:
-                    img = generate_image(prompt)
-                    bot.send_photo(user_id, photo=img)
-                    last_image_prompt = prompt
-                    image_cooldown = 3  # пауза, чтобы не спамить картинками
-                except Exception as e:
-                    print("Ошибка генерации изображения:", e)
-            else:
-                image_cooldown = max(0, image_cooldown - 1)
+            if contains_image_trigger(reply):
+                prompt = extract_image_prompt(reply)
+                if prompt and prompt != last_image_prompt and image_cooldown <= 0:
+                    try:
+                        img = generate_image(prompt)
+                        bot.send_photo(user_id, photo=img)
+                        last_image_prompt = prompt
+                        image_cooldown = 3  # пауза, чтобы не спамить картинками
+                    except Exception as e:
+                        print("Ошибка генерации изображения:", e)
+                else:
+                    image_cooldown = max(0, image_cooldown - 1)
 
     except Exception as e:
         print(f"❌ Error: {e}")
