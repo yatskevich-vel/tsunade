@@ -89,7 +89,7 @@ def generate_image(prompt):
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
+        "model": "google/gemini-2.5-pro-exp-03-25",
         "prompt": prompt,
         "size": "512x512"
     }
@@ -128,7 +128,7 @@ def ask_openrouter(messages):
         "HTTP-Referer": "https://github.com/yatskevich-vel/tsunade.git"
     }
     data = {
-        "model": "mistralai/mistral-small-3.2-24b-instruct:free",
+        "model": "openai/gpt-oss-20b:free",
         "messages": messages,
         "temperature": 0.9
     }
