@@ -83,9 +83,9 @@ def generate_image(prompt):
         "Content-Type": "application/json"
     }
     payload = {
-        "model": "stabilityai/stable-diffusion-xl-base-1.0",
+        "model": "mistralai/mistral-small-3.2-24b-instruct:free",  # Выбрали модель Mistral Small 3.2
         "prompt": prompt,
-        "size": "1024x1024"
+        "size": "512x512"  # Меньшее разрешение для телефона
     }
     response = requests.post(url, headers=headers, json=payload)
     response.raise_for_status()
